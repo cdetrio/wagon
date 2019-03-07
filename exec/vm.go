@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"time"
 
 	"github.com/go-interpreter/wagon/disasm"
 	"github.com/go-interpreter/wagon/exec/internal/compile"
@@ -95,6 +96,11 @@ func NewVM(module *wasm.Module) (*VM, error) {
 	vm.newFuncTable()
 	vm.module = module
 
+	var disasmStart time.Time
+	var disasmTotal time.Duration
+	var compileStart time.Time
+	var compileTotal time.Duration
+
 	nNatives := 0
 	for i, fn := range module.FunctionIndexSpace {
 		// Skip native methods as they need not be
@@ -112,7 +118,11 @@ func NewVM(module *wasm.Module) (*VM, error) {
 			continue
 		}
 
+		disasmStart = time.Now()
 		disassembly, err := disasm.NewDisassembly(fn, module)
+		disasmElapsed := time.Since(disasmStart)
+		disasmTotal += disasmElapsed
+
 		if err != nil {
 			return nil, err
 		}
@@ -122,6 +132,8 @@ func NewVM(module *wasm.Module) (*VM, error) {
 		for _, entry := range fn.Body.Locals {
 			totalLocalVars += int(entry.Count)
 		}
+
+		compileStart = time.Now()
 		code, table := compile.Compile(disassembly.Code)
 		vm.funcs[i] = compiledFunction{
 			code:           code,
@@ -131,7 +143,13 @@ func NewVM(module *wasm.Module) (*VM, error) {
 			args:           len(fn.Sig.ParamTypes),
 			returns:        len(fn.Sig.ReturnTypes) != 0,
 		}
+
+		compileElapsed := time.Since(compileStart)
+		compileTotal += compileElapsed
 	}
+
+	fmt.Printf("disasm time: %s\n", disasmTotal)
+	fmt.Printf("compile time: %s\n", compileTotal)
 
 	for i, global := range module.GlobalIndexSpace {
 		val, err := module.ExecInitExpr(global.Init)
